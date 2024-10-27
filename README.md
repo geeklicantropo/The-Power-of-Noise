@@ -1,3 +1,7 @@
+# The major part of the code belongs to the following repository
+
+https://github.com/florin-git/The-Power-of-Noise
+
 # The Power of Noise: Redefining Retrieval for RAG Systems
 
 This repository contains the code and data to reproduce the experiments from the paper [The Power of Noise: Redefining Retrieval for RAG Systems](https://dl.acm.org/doi/10.1145/3626772.3657834).
