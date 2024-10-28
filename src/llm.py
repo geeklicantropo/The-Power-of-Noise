@@ -5,17 +5,25 @@ from transformers import (
 )
 from typing import List, Tuple, Optional
 
+class StopOnTokens(StoppingCriteria):
+    """Custom stopping criteria for text generation"""
+    def __init__(self, tokenizer, stop_strings: List[str]):
+        self.tokenizer = tokenizer
+        self.stop_token_ids = [
+            torch.LongTensor(self.tokenizer(x)['input_ids'])
+            for x in stop_strings
+        ]
+
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs) -> bool:
+        for stop_ids in self.stop_token_ids:
+            if torch.eq(input_ids[0][-len(stop_ids):], stop_ids).all():
+                return True
+        return False
+
 class LLM:
     """
-    A class for loading and generating text using a Language Model (LM) with support for quantization
-    and custom stopping criteria.
-    
-    Attributes:
-        model_id (str): Identifier for the model to load.
-        device (str): Device to run the model on, e.g. 'cuda'.
-        quantization_bits (Optional[int]): Number of bits for quantization, supports 4 or 8 bits.
-        stop_list (Optional[List[str]]): List of tokens where generation should stop.
-        model_max_length (int): Maximum length of the model inputs.
+    A class for loading and generating text using Language Models with support for 
+    quantization and custom stopping criteria.
     """
     def __init__(
         self, 
@@ -27,6 +35,7 @@ class LLM:
     ):
         self.device = device
         self.model_max_length = model_max_length
+        self.llm_id = model_id
 
         self.stop_list = stop_list
         if stop_list is None:
@@ -34,13 +43,10 @@ class LLM:
         
         self.bnb_config = self._set_quantization(quantization_bits)
         self.model, self.tokenizer = self._initialize_model_tokenizer(model_id)
-        self.stopping_criteria = self._define_stopping_criteria()
         
 
     def _set_quantization(self, quantization_bits: Optional[int]) -> Optional[BitsAndBytesConfig]:
-        """
-        Configure quantization settings based on the specified number of bits.
-        """
+        """Configure quantization settings"""
         if quantization_bits in [4, 8]:
             bnb_config = BitsAndBytesConfig()
             if quantization_bits == 4:
@@ -55,9 +61,7 @@ class LLM:
  
 
     def _initialize_model_tokenizer(self, model_id: str) -> Tuple[AutoModelForCausalLM, AutoTokenizer]:
-        """
-        Initializes the model and tokenizer with the given model ID.
-        """
+        """Initialize model and tokenizer"""
         model_config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
         model_config.max_seq_len = self.model_max_length
 
@@ -69,61 +73,51 @@ class LLM:
             torch_dtype=torch.bfloat16,
             device_map='auto',
         )
-        model.eval() # Set the model to evaluation mode
+        model.eval()
 
         tokenizer = AutoTokenizer.from_pretrained(
-            model_id, padding_side="left", truncation_side="left",
+            model_id, 
+            padding_side="left", 
+            truncation_side="left",
             model_max_length=self.model_max_length
         )
-        # Most LLMs don't have a pad token by default
-        tokenizer.pad_token = tokenizer.eos_token  
+        tokenizer.pad_token = tokenizer.eos_token
 
         return model, tokenizer
-
-
-    def _define_stopping_criteria(self) -> StoppingCriteriaList:
-        """
-        Defines stopping criteria for text generation based on the provided stop_list.
-        """
-        stop_token_ids = [self.tokenizer(x)['input_ids'] for x in self.stop_list]
-        stop_token_ids = [torch.LongTensor(x).to(self.device) for x in stop_token_ids]
-
-        class StopOnTokens(StoppingCriteria):
-            def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs) -> bool:
-                for stop_ids in stop_token_ids:
-                    if torch.eq(input_ids[0][-len(stop_ids):], stop_ids).all():
-                        return True
-                return False
-
-        return StoppingCriteriaList([StopOnTokens()])
     
-    
-    def generate(self, prompt: str, max_new_tokens: int = 15) -> List[str]:
-        """
-        Generates text based on the given prompt.
-        
-        Args:
-            prompt (str): Input text prompt for generation.
-        
-        Returns:
-            List[str]: The generated text responses.
-        """
-        inputs = self.tokenizer(
-            prompt, 
-            padding=True, 
-            truncation=True, 
-            max_length=self.model_max_length, 
-            return_tensors="pt"
-        ).to(self.device)
-        
-        generated_ids = self.model.generate(
-            **inputs,
-            do_sample=False,
-            max_new_tokens=max_new_tokens,
-            repetition_penalty=1.1,
-            stopping_criteria=self.stopping_criteria,
-            pad_token_id=self.tokenizer.eos_token_id,
-            eos_token_id=self.tokenizer.eos_token_id,
-        )
-        return self.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+    def generate(self, prompts: List[str], max_new_tokens: int = 15) -> List[str]:
+        """Generate text responses for the given prompts"""
+        # Handle different stopping sequences based on model type
+        stop_sequence = "\n### Human:" if 'mpt' in self.llm_id else "\nQuestion:"
+        stopping_criteria = StoppingCriteriaList([
+            StopOnTokens(
+                self.tokenizer,
+                [stop_sequence, "\n```\n", "<|endoftext|>", "\n"]
+            )
+        ])
 
+        all_responses = []
+        for prompt in prompts:
+            inputs = self.tokenizer(
+                prompt, 
+                padding=True, 
+                truncation=True, 
+                max_length=self.model_max_length, 
+                return_tensors="pt"
+            ).to(self.device)
+            
+            with torch.no_grad():
+                generated_ids = self.model.generate(
+                    **inputs,
+                    do_sample=False,
+                    max_new_tokens=max_new_tokens,
+                    repetition_penalty=1.1,
+                    stopping_criteria=stopping_criteria,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                    eos_token_id=self.tokenizer.eos_token_id,
+                )
+                
+                response = self.tokenizer.decode(generated_ids[0], skip_special_tokens=True)
+                all_responses.append(response)
+
+        return all_responses

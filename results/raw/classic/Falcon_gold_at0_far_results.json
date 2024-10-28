@@ -1,0 +1,1 @@
+[{"example_id": "123", "query": "who owned the millennium falcon before han solo", "documents": [{"text": "Sample document 1", "score": 0.9}, {"text": "Sample document 2", "score": 0.8}], "gold_position": 0, "generated_answer": "Lando Calrissian", "ans_match_after_norm": true}]

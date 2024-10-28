@@ -1,0 +1,16 @@
+{
+    "experiment_type": "multi_corpus",
+    "llm_id": "mosaicml/mpt-7b-instruct",
+    "model_max_length": 2048,
+    "device": "cuda",
+    "batch_size": 18,
+    "load_full_corpus": false,
+    "use_bm25": false,
+    "use_corpus_nonsense": false,
+    "num_main_documents": 1,
+    "num_other_documents": 1,
+    "put_main_first": false,
+    "use_test": true,
+    "output_dir": "experiment_results/multi_corpus",
+    "save_every": 250
+}

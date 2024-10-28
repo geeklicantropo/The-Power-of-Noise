@@ -1,0 +1,16 @@
+{
+    "experiment_type": "classic",
+    "llm_id": "meta-llama/Llama-2-7b-chat-hf",
+    "model_max_length": 4096,
+    "device": "cuda",
+    "batch_size": 10,
+    "load_full_corpus": true,
+    "use_random": false,
+    "use_adore": false,
+    "gold_position": 6,
+    "num_documents_in_context": 7,
+    "get_documents_without_answer": true,
+    "use_test": false,
+    "output_dir": "experiment_results/classic",
+    "save_every": 250
+}
